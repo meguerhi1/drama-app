@@ -844,32 +844,34 @@ async function loadEpisode(episode) {
     if (!episode) return;
     if (episode.id > 4 && !isUnlocked) { showPaymentModal(); return; }
     
-    var realUrl = await getEpisodeUrl(episode.id, currentSeries.seriesId, currentSeries.apiFile, currentUnlockKey);
+    // ✅ لم نعد نجلب الرابط الحقيقي في الواجهة
+    // الرابط الحقيقي يتم جلبه داخل api/stream.js فقط
     
-    if (realUrl) {
-        currentEpisode = episode;
-        var video = document.getElementById("videoPlayer");
-        var source = document.getElementById("videoSource");
-        
-if (source) source.src = `/api/stream?episodeId=${episode.id}&seriesId=${currentSeries.seriesId}&key=${currentUnlockKey || ''}`;        if (video) { 
-            video.load(); 
-            video.play().catch(function(e) { 
-                console.log("تشغيل تلقائي غير مسموح:", e);
-            }); 
-        }
-        
-        var seriesNameSpan = document.getElementById("seriesName");
-        var episodeNumberSpan = document.getElementById("currentEpisodeNumber");
-        if (seriesNameSpan) seriesNameSpan.innerText = currentSeries.title;
-        if (episodeNumberSpan) episodeNumberSpan.innerText = "الحلقة " + episode.number;
-        
-        var items = document.querySelectorAll("#episodesList li");
-        for (var i = 0; i < items.length; i++) {
-            items[i].classList.remove("active");
-            if ($(items[i]).data("id") == episode.id) { items[i].classList.add("active"); }
-        }
-    } else { 
-        showToastMessage("⚠️ رابط هذه الحلقة غير متوفر حالياً");
+    currentEpisode = episode;
+    var video = document.getElementById("videoPlayer");
+    var source = document.getElementById("videoSource");
+    
+    // ✅ رابط البروكسي بدلاً من الرابط الحقيقي
+    if (source) {
+        source.src = `/api/stream?episodeId=${episode.id}&seriesId=${currentSeries.seriesId}&apiFile=${currentSeries.apiFile}&key=${currentUnlockKey || ''}`;
+    }
+    
+    if (video) { 
+        video.load(); 
+        video.play().catch(function(e) { 
+            console.log("تشغيل تلقائي غير مسموح:", e);
+        }); 
+    }
+    
+    var seriesNameSpan = document.getElementById("seriesName");
+    var episodeNumberSpan = document.getElementById("currentEpisodeNumber");
+    if (seriesNameSpan) seriesNameSpan.innerText = currentSeries.title;
+    if (episodeNumberSpan) episodeNumberSpan.innerText = "الحلقة " + episode.number;
+    
+    var items = document.querySelectorAll("#episodesList li");
+    for (var i = 0; i < items.length; i++) {
+        items[i].classList.remove("active");
+        if ($(items[i]).data("id") == episode.id) { items[i].classList.add("active"); }
     }
 }
 
