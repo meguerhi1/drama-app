@@ -297,4 +297,368 @@ async function showSubscribers(chatId, page = 0, messageId = null) {
   const opts = { parse_mode: 'Markdown', reply_markup: { inline_keyboard: keyboard } };
   
   if (messageId) {
-    return bot.edit
+    return bot.editMessageText(text, { chat_id: chatId, message_id: messageId, ...opts })
+      .catch(() => bot.sendMessage(chatId, text, opts));
+  }
+  return bot.sendMessage(chatId, text, opts);
+}
+
+// ==================== دوال مساعدة ====================
+function getStatusEmoji(status) {
+  status = String(status).trim();
+  if (status === 'active') return '✅';
+  if (status === 'expired') return '⏰';
+  if (status === 'revoked') return '🚫';
+  return '❓';
+}
+
+function getStatusName(status) {
+  status = String(status).trim();
+  if (status === 'active') return 'النشطة';
+  if (status === 'expired') return 'المنتهية';
+  if (status === 'revoked') return 'الملغاة';
+  return 'الكل';
+}
+
+function getPlanName(plan) {
+  plan = String(plan).trim();
+  if (plan === 'weekly') return 'أسبوعي';
+  if (plan === 'monthly') return 'شهري';
+  if (plan === 'yearly') return 'سنوي';
+  return plan;
+}
+
+function formatDate(dateStr) {
+  try {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('ar-DZ', { year: 'numeric', month: '2-digit', day: '2-digit' });
+  } catch {
+    return 'غير معروف';
+  }
+}
+
+function truncate(str, len) {
+  if (!str) return '';
+  return str.length > len ? str.substring(0, len) + '...' : str;
+}
+
+// ==================== أوامر البوت ====================
+bot.onText(/\/start/, async (msg) => {
+  const chatId = msg.chat.id;
+  const name = msg.from.first_name || 'مستخدم';
+  
+  if (!isAdmin(chatId)) {
+    return bot.sendMessage(chatId, 
+      `🔒 *بوت DramaWorld الإداري*\n\n` +
+      `مرحباً ${name}!\n` +
+      `هذا البوت مخصص للمشرفين فقط.\n\n` +
+      `للدخول، أرسل كلمة المرور:\n` +
+      `/login كلمة_المرور`,
+      { parse_mode: 'Markdown' }
+    );
+  }
+  
+  bot.sendMessage(chatId,
+    `🎬 *مرحباً بك في بوت DramaWorld الإداري*\n\n` +
+    `👤 ${name}\n` +
+    `🆔 معرفك: \`${chatId}\`\n\n` +
+    `اختر من القائمة أدناه:`,
+    { parse_mode: 'Markdown', ...getMainMenu() }
+  );
+});
+
+bot.onText(/\/login (.+)/, (msg, match) => {
+  const chatId = msg.chat.id;
+  const password = match[1].trim();
+  
+  if (password === ADMIN_PASSWORD) {
+    authorizedUsers.add(String(chatId));
+    bot.sendMessage(chatId,
+      `✅ *تم تسجيل الدخول بنجاح!*\n\nاختر من القائمة:`,
+      { parse_mode: 'Markdown', ...getMainMenu() }
+    );
+  } else {
+    bot.sendMessage(chatId, '❌ كلمة مرور خاطئة!');
+  }
+});
+
+bot.onText(/\/stats/, (msg) => {
+  if (!isAdmin(msg.chat.id)) return bot.sendMessage(msg.chat.id, '🔒 غير مصرح');
+  showStats(msg.chat.id);
+});
+
+bot.onText(/\/keys/, (msg) => {
+  if (!isAdmin(msg.chat.id)) return bot.sendMessage(msg.chat.id, '🔒 غير مصرح');
+  showKeys(msg.chat.id, 'all');
+});
+
+bot.onText(/\/orders/, (msg) => {
+  if (!isAdmin(msg.chat.id)) return bot.sendMessage(msg.chat.id, '🔒 غير مصرح');
+  showOrders(msg.chat.id);
+});
+
+bot.onText(/\/subs/, (msg) => {
+  if (!isAdmin(msg.chat.id)) return bot.sendMessage(msg.chat.id, '🔒 غير مصرح');
+  showSubscribers(msg.chat.id);
+});
+
+// ==================== معالجة الأزرار ====================
+bot.on('callback_query', async (query) => {
+  const chatId = query.message.chat.id;
+  const messageId = query.message.message_id;
+  const data = query.data;
+  
+  if (!isAdmin(chatId)) {
+    return bot.answerCallbackQuery(query.id, { text: '🔒 غير مصرح', show_alert: true });
+  }
+  
+  await bot.answerCallbackQuery(query.id);
+  
+  // القائمة الرئيسية
+  if (data === 'main_menu') {
+    return bot.editMessageText(
+      `🎬 *لوحة التحكم الرئيسية*\n\nاختر من القائمة:`,
+      { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', ...getMainMenu() }
+    ).catch(() => bot.sendMessage(chatId, '🎬 *لوحة التحكم*', { parse_mode: 'Markdown', ...getMainMenu() }));
+  }
+  
+  if (data === 'stats') return showStats(chatId, messageId);
+  if (data === 'manage_keys') {
+    return bot.editMessageText(
+      `🔑 *إدارة المفاتيح*\n\nاختر الفئة:`,
+      { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', ...getKeysMenu() }
+    ).catch(() => bot.sendMessage(chatId, '🔑 *إدارة المفاتيح*', { parse_mode: 'Markdown', ...getKeysMenu() }));
+  }
+  
+  if (data === 'orders') return showOrders(chatId, 0, messageId);
+  if (data === 'subscribers') return showSubscribers(chatId, 0, messageId);
+  if (data === 'help') {
+    return bot.editMessageText(
+      `❓ *مساعدة*\n\n` +
+      `*الأوامر المتاحة:*\n` +
+      `/start - القائمة الرئيسية\n` +
+      `/login كلمة_المرور - تسجيل الدخول\n` +
+      `/stats - الإحصائيات\n` +
+      `/keys - كل المفاتيح\n` +
+      `/orders - الطلبات\n` +
+      `/subs - المشتركين النشطين\n\n` +
+      `*ملاحظة:* البوت يتصل مباشرة بـ Google Sheets`,
+      { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', ...getMainMenu() }
+    );
+  }
+  
+  if (data === 'search_key') {
+    userStates.set(chatId, { action: 'search_key' });
+    return bot.sendMessage(chatId, 
+      `🔍 *البحث عن مفتاح*\n\nأرسل المفتاح للبحث عنه:`,
+      { parse_mode: 'Markdown', reply_markup: { force_reply: true, selective: true } }
+    );
+  }
+  
+  if (data === 'create_key') {
+    return bot.sendMessage(chatId,
+      `➕ *إنشاء مفتاح يدوي*\n\n` +
+      `لإنشاء مفتاح، استخدم الأمر:\n` +
+      `/newkey الباقة(weekly/monthly/yearly) الملاحظة\n\n` +
+      `مثال:\n` +
+      `/newkey monthly عميل_جديد`,
+      { parse_mode: 'Markdown', ...getMainMenu() }
+    );
+  }
+  
+  // عرض المفاتيح حسب الفلتر
+  if (data.startsWith('keys_')) {
+    const parts = data.split('_');
+    if (parts.length === 2) {
+      const filter = parts[1];
+      return showKeys(chatId, filter, messageId);
+    } else if (parts.length === 3) {
+      const filter = parts[1];
+      const page = parseInt(parts[2]);
+      return showKeys(chatId, filter, messageId, page);
+    }
+  }
+  
+  // التنقل في الطلبات
+  if (data.startsWith('orders_')) {
+    const page = parseInt(data.split('_')[1]);
+    return showOrders(chatId, page, messageId);
+  }
+  
+  // التنقل في المشتركين
+  if (data.startsWith('subs_')) {
+    const page = parseInt(data.split('_')[1]);
+    return showSubscribers(chatId, page, messageId);
+  }
+  
+  // تفعيل مفتاح
+  if (data.startsWith('activate_')) {
+    const key = data.substring(9);
+    const loadingMsg = await bot.sendMessage(chatId, `⏳ جاري تفعيل المفتاح...`);
+    
+    const result = await callScript('activateKey', { pass: ADMIN_PASSWORD, key });
+    
+    await bot.deleteMessage(chatId, loadingMsg.message_id);
+    
+    if (result.success) {
+      bot.sendMessage(chatId, `✅ *تم تفعيل المفتاح بنجاح!*\n\n🔑 \`${key}\``, 
+        { parse_mode: 'Markdown', ...getMainMenu() });
+    } else {
+      bot.sendMessage(chatId, `❌ فشل في التفعيل\nتأكد من صحة المفتاح`, getMainMenu());
+    }
+    return;
+  }
+  
+  // إلغاء مفتاح
+  if (data.startsWith('revoke_')) {
+    const key = data.substring(7);
+    
+    // طلب تأكيد
+    return bot.sendMessage(chatId,
+      `⚠️ *تأكيد الإلغاء*\n\nهل أنت متأكد من إلغاء المفتاح:\n\`${key}\`؟`,
+      {
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: '✅ نعم، ألغِ', callback_data: `confirm_revoke_${key}` },
+              { text: '❌ لا', callback_data: 'manage_keys' }
+            ]
+          ]
+        }
+      }
+    );
+  }
+  
+  if (data.startsWith('confirm_revoke_')) {
+    const key = data.substring(15);
+    const loadingMsg = await bot.sendMessage(chatId, `⏳ جاري الإلغاء...`);
+    
+    const result = await callScript('revokeKey', { pass: ADMIN_PASSWORD, key });
+    
+    await bot.deleteMessage(chatId, loadingMsg.message_id);
+    
+    if (result.success) {
+      bot.sendMessage(chatId, `🚫 *تم إلغاء المفتاح*\n\n🔑 \`${key}\``, 
+        { parse_mode: 'Markdown', ...getMainMenu() });
+    } else {
+      bot.sendMessage(chatId, `❌ فشل الإلغاء`, getMainMenu());
+    }
+    return;
+  }
+});
+
+// ==================== إنشاء مفتاح يدوي ====================
+bot.onText(/\/newkey (.+)/, async (msg, match) => {
+  const chatId = msg.chat.id;
+  if (!isAdmin(chatId)) return bot.sendMessage(chatId, '🔒 غير مصرح');
+  
+  const args = match[1].trim().split(/\s+/);
+  const plan = args[0] || 'monthly';
+  const note = args.slice(1).join(' ') || 'يدوي';
+  
+  const loadingMsg = await bot.sendMessage(chatId, '⏳ جاري إنشاء المفتاح...');
+  
+  const result = await callScript('saveOrder', {
+    binanceId: `MANUAL_${note}`,
+    phone: note,
+    plan: plan,
+    amount: plan === 'weekly' ? 0.99 : (plan === 'yearly' ? 30 : 3),
+    paymentMethod: 'manual',
+    paypalOrderId: `MANUAL_${Date.now()}`
+  });
+  
+  await bot.deleteMessage(chatId, loadingMsg.message_id);
+  
+  if (result.success && result.key) {
+    bot.sendMessage(chatId,
+      `✅ *تم إنشاء المفتاح بنجاح!*\n\n` +
+      `🔑 المفتاح: \`${result.key}\`\n` +
+      `💎 الباقة: ${getPlanName(plan)}\n` +
+      `📝 الملاحظة: ${note}\n` +
+      `🆔 الطلب: \`${result.orderId}\`\n\n` +
+      `💡 أرسل هذا المفتاح للعميل`,
+      { parse_mode: 'Markdown', ...getMainMenu() }
+    );
+  } else {
+    bot.sendMessage(chatId, '❌ فشل في إنشاء المفتاح', getMainMenu());
+  }
+});
+
+// ==================== البحث عن مفتاح ====================
+bot.on('message', async (msg) => {
+  const chatId = msg.chat.id;
+  const text = msg.text;
+  
+  if (!text || text.startsWith('/')) return;
+  if (!isAdmin(chatId)) return;
+  
+  const state = userStates.get(chatId);
+  
+  if (state && state.action === 'search_key') {
+    userStates.delete(chatId);
+    
+    const loadingMsg = await bot.sendMessage(chatId, '🔍 جاري البحث...');
+    
+    const result = await callScript('listKeys', { pass: ADMIN_PASSWORD });
+    
+    await bot.deleteMessage(chatId, loadingMsg.message_id);
+    
+    if (!result.success || !result.keys) {
+      return bot.sendMessage(chatId, '❌ فشل في البحث', getMainMenu());
+    }
+    
+    const found = result.keys.find(k => String(k.key).trim() === text.trim());
+    
+    if (found) {
+      const daysLeft = Math.ceil((new Date(found.expiresAt) - new Date()) / (1000 * 60 * 60 * 24));
+      
+      let infoText = 
+        `🔍 *نتيجة البحث*\n\n` +
+        `🔑 المفتاح: \`${found.key}\`\n` +
+        `${getStatusEmoji(found.status)} الحالة: ${getStatusName(found.status)}\n` +
+        `💎 الباقة: ${getPlanName(found.plan)}\n` +
+        `📅 تاريخ الإنشاء: ${formatDate(found.createdAt)}\n` +
+        `⏰ تاريخ الانتهاء: ${formatDate(found.expiresAt)}\n`;
+      
+      if (String(found.status).trim() === 'active') {
+        infoText += `⏳ الأيام المتبقية: ${daysLeft} يوم\n`;
+      }
+      
+      if (found.payerInfo) {
+        infoText += `👤 معلومات الدافع: ${found.payerInfo}\n`;
+      }
+      
+      const status = String(found.status).trim();
+      const keyboard = [];
+      
+      if (status === 'active') {
+        keyboard.push([{ text: '🚫 إلغاء التفعيل', callback_data: `revoke_${found.key}` }]);
+      } else {
+        keyboard.push([{ text: '✅ تفعيل', callback_data: `activate_${found.key}` }]);
+      }
+      
+      keyboard.push([{ text: '⬅️ رجوع', callback_data: 'main_menu' }]);
+      
+      return bot.sendMessage(chatId, infoText, {
+        parse_mode: 'Markdown',
+        reply_markup: { inline_keyboard: keyboard }
+      });
+    } else {
+      return bot.sendMessage(chatId, `❌ لم يتم العثور على المفتاح:\n\`${text}\``, 
+        { parse_mode: 'Markdown', ...getMainMenu() });
+    }
+  }
+});
+
+// ==================== معالجة الأخطاء ====================
+bot.on('polling_error', (error) => {
+  console.error('Polling Error:', error.message);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+});
+
+console.log('🤖 بوت DramaWorld يعمل...');
+console.log(`📡 متصل بـ: ${SCRIPT_URL}`);
